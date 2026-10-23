@@ -1,0 +1,4 @@
+*.json
+niv_clean.json
+__pycache__/
+*.py[cod]

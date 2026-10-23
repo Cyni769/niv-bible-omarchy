@@ -1,0 +1,512 @@
+#!/usr/bin/env python3
+import curses
+import json
+import os
+import re
+import sys
+import textwrap
+import random
+import subprocess
+import hashlib
+from datetime import date
+
+DATA_PATH = os.path.expanduser("~/.local/share/bible/niv_clean.json")
+
+if not os.path.exists(DATA_PATH):
+    print("Error: NIV database missing. Run database setup first.")
+    sys.exit(1)
+
+with open(DATA_PATH, "r", encoding="utf-8") as f:
+    bible = json.load(f)
+
+BOOKS = [
+    "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
+    "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
+    "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra",
+    "Nehemiah", "Esther", "Job", "Psalms", "Proverbs",
+    "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations",
+    "Ezekiel", "Daniel", "Hosea", "Joel", "Amos",
+    "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk",
+    "Zephaniah", "Haggai", "Zechariah", "Malachi",
+    "Matthew", "Mark", "Luke", "John", "Acts",
+    "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians",
+    "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy",
+    "2 Timothy", "Titus", "Philemon", "Hebrews", "James",
+    "1 Peter", "2 Peter", "1 John", "2 John", "3 John",
+    "Jude", "Revelation"
+]
+
+BOOK_BRIEFS = {
+    "Genesis": "Origins of creation, humanity, covenant, and the patriarchs.",
+    "Exodus": "Liberation from Egypt, the law given at Sinai, and God's dwelling.",
+    "Leviticus": "Holiness, priestly service, atonement, and sacred order.",
+    "Numbers": "Wilderness wanderings, testing, and preparation for promise.",
+    "Deuteronomy": "Covenant renewed; Moses’ farewell charges to Israel.",
+    "Joshua": "Entering, conquering, and dividing the promised land.",
+    "Judges": "Cycles of rebellion, oppression, deliverance, and leadership.",
+    "Ruth": "Loyalty, redemption, and providence leading to David’s line.",
+    "1 Samuel": "Transition from judges to kings; Saul and David anointed.",
+    "2 Samuel": "David's reign, triumphs, failures, and eternal covenant.",
+    "1 Kings": "Solomon's wisdom and temple; kingdom divided.",
+    "2 Kings": "Decline of divided kingdoms, exile of Israel and Judah.",
+    "1 Chronicles": "Genealogies and Davidic worship legacy retold.",
+    "2 Chronicles": "Solomon's temple to Judah's exile and decree of return.",
+    "Ezra": "Return from exile, rebuild of the altar and temple.",
+    "Nehemiah": "Rebuilding Jerusalem's walls, civic and spiritual renewal.",
+    "Esther": "God's providence preserving His people in Persia.",
+    "Job": "Sovereignty of God amid suffering and mystery.",
+    "Psalms": "Prayers, laments, praises, and prophetic songs of worship.",
+    "Proverbs": "Wisdom, understanding, and the fear of the Lord for daily life.",
+    "Ecclesiastes": "Meaning of life under the sun; eternal perspective.",
+    "Song of Solomon": "Celebration of love, pursuit, and marital beauty.",
+    "Isaiah": "Judgment, holiness, and prophecies of the Suffering Servant.",
+    "Jeremiah": "Laments and warning of exile; promise of a New Covenant.",
+    "Lamentations": "Grief over fallen Jerusalem and God's enduring mercies.",
+    "Ezekiel": "Visions of divine glory, restoration, and new hearts.",
+    "Daniel": "Kingdoms of man versus the sovereign rule of the Ancient of Days.",
+    "Hosea": "God's unyielding, redeeming love for unfaithful people.",
+    "Joel": "The Day of the Lord and outpouring of the Spirit.",
+    "Amos": "Justice flowing like water; righteousness required.",
+    "Obadiah": "Pride humbled and deliverance on Mount Zion.",
+    "Jonah": "Reluctant prophet and God's expansive mercy to nations.",
+    "Micah": "What is required: to act justly, love mercy, and walk humbly.",
+    "Nahum": "Sovereign justice against violent empires.",
+    "Habakkuk": "Questioning divine timing; the righteous shall live by faith.",
+    "Zephaniah": "Purifying judgment and a restored remnant singing.",
+    "Haggai": "Rebuilding God's house and prioritizing divine presence.",
+    "Zechariah": "Visions of future glory, the humble King on a donkey.",
+    "Malachi": "Refining fire, faithful honor, and the Sun of Righteousness.",
+    "Matthew": "Jesus the promised King and Messiah fulfilling the law.",
+    "Mark": "Jesus the Servant in rapid action, power, and sacrifice.",
+    "Luke": "Compassionate Savior seeking and saving the lost.",
+    "John": "The Word made flesh; life, truth, and eternal belief.",
+    "Acts": "Ascension, Holy Spirit power, and unstoppable gospel mission.",
+    "Romans": "Righteousness of God, grace through faith, and living sacrifices.",
+    "1 Corinthians": "Unity, gifts, holiness, and the primacy of love.",
+    "2 Corinthians": "Ministry in weakness, comfort in affliction, reconciliation.",
+    "Galatians": "Freedom in Christ and justification by faith alone.",
+    "Ephesians": "Chosen in Christ, unified Church, and armor of God.",
+    "Philippians": "Joy, humility, and the peace of God in all circumstances.",
+    "Colossians": "Preeminence of Christ and life renewed in Him.",
+    "1 Thessalonians": "Hope, steadfast faith, and the return of the Lord.",
+    "2 Thessalonians": "Endurance in trials and vigilance before Christ returns.",
+    "1 Timothy": "Sound doctrine, church order, and pastoral endurance.",
+    "2 Timothy": "Faithfulness, unashamed courage, and running the race.",
+    "Titus": "Good works, sound leadership, and grace that transforms.",
+    "Philemon": "Forgiveness, brotherly love, and reconciliation.",
+    "Hebrews": "Jesus superior to all; ultimate High Priest and Author of faith.",
+    "James": "Living faith proved by works, wisdom, and speech.",
+    "1 Peter": "Living hope, holy living, and standing firm through fire.",
+    "2 Peter": "Growing in grace and guarding against deception.",
+    "1 John": "Walking in light, knowing truth, and loving one another.",
+    "2 John": "Abiding in truth and guarding hospitality.",
+    "3 John": "Faithful support for truth-bearers and humble service.",
+    "Jude": "Contending earnestly for the faith once delivered.",
+    "Revelation": "The Lamb triumphant, evil defeated, and New Jerusalem restored."
+}
+
+CHAPTER_MAP = {}
+MAX_CHAPTERS = {}
+
+for ref, text in bible.items():
+    ref_clean = ref.strip()
+    if ":" in ref_clean:
+        head, v_label = ref_clean.rsplit(":", 1)
+        parts = head.strip().rsplit(" ", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            b_name, c_num = parts[0].strip(), int(parts[1])
+            matched_b = next((b for b in BOOKS if b.lower() == b_name.lower()), b_name)
+            num_match = re.search(r"\d+", v_label.strip())
+            v_num = int(num_match.group(0)) if num_match else 0
+            key = (matched_b, c_num)
+            if key not in CHAPTER_MAP:
+                CHAPTER_MAP[key] = []
+            CHAPTER_MAP[key].append((v_num, v_label.strip(), text))
+            if matched_b not in MAX_CHAPTERS or c_num > MAX_CHAPTERS[matched_b]:
+                MAX_CHAPTERS[matched_b] = c_num
+
+for key in CHAPTER_MAP:
+    CHAPTER_MAP[key].sort(key=lambda x: x[0])
+
+def get_max_chapters(book_name):
+    return MAX_CHAPTERS.get(book_name, 1)
+
+def get_daily_verse():
+    today_str = date.today().isoformat()
+    keys = sorted(list(bible.keys()))
+    idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(keys)
+    ref = keys[idx]
+    return ref, bible[ref]
+
+def parse_search_selection(line):
+    ref_part = line.split("  |  ")[0].strip()
+    if ":" in ref_part:
+        head, v_label = ref_part.rsplit(":", 1)
+        parts = head.strip().rsplit(" ", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            b_name = parts[0].strip()
+            c_num = int(parts[1])
+            matched_b = next((b for b in BOOKS if b.lower() == b_name.lower()), b_name)
+            num_match = re.search(r"\d+", v_label)
+            v_num = int(num_match.group(0)) if num_match else 1
+            return matched_b, c_num, v_num
+    return None, None, 1
+
+def run_fzf_search(stdscr):
+    curses.def_prog_mode()
+    curses.endwin()
+    fzf_input = "\n".join([f"{ref}  |  {text.strip()}" for ref, text in bible.items()])
+    result = (None, None, 1)
+    try:
+        proc = subprocess.Popen(
+            [
+                "fzf",
+                "--prompt=📖 Search > ",
+                "--preview-window=bottom:50%:wrap",
+                "--preview=echo {} | sed 's/  |  /\\n\\n/'",
+                "--header=Type scripture query | ENTER to open | ESC to exit",
+                "--reverse",
+                "--border=rounded",
+                "--margin=1,2"
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True
+        )
+        selected, _ = proc.communicate(input=fzf_input)
+        if selected and selected.strip():
+            result = parse_search_selection(selected.strip())
+    except Exception:
+        pass
+    curses.reset_prog_mode()
+    curses.curs_set(0)
+    stdscr.clear()
+    stdscr.refresh()
+    return result
+
+class RenderEngine:
+    def __init__(self):
+        self.cached_key = None
+        self.cached_width = 0
+        self.lines = []
+        self.v_index = {}
+
+    def get_lines(self, book, chap, width):
+        if self.cached_key == (book, chap) and self.cached_width == width:
+            return self.lines, self.v_index
+        verses = CHAPTER_MAP.get((book, chap), [])
+        gutter_w = 6
+        text_w = max(20, width - gutter_w)
+        lines = []
+        v_index = {}
+        for v_num, v_label, v_text in verses:
+            v_index[v_num] = len(lines)
+            wrapped = textwrap.wrap(v_text.strip(), text_w)
+            if wrapped:
+                lines.append((v_label, v_num, wrapped[0]))
+                for sub in wrapped[1:]:
+                    lines.append(("", v_num, sub))
+            lines.append(("", None, ""))
+        self.cached_key = (book, chap)
+        self.cached_width = width
+        self.lines = lines
+        self.v_index = v_index
+        return lines, v_index
+
+renderer = RenderEngine()
+
+HOLY_BIBLE_BANNER = [
+    r"██╗  ██╗ ██████╗ ██╗  ██╗   ██╗    ██████╗ ██╗██████╗ ██╗     ███████╗",
+    r"██║  ██║██╔═══██╗██║  ╚██╗ ██╔╝    ██╔══██╗██║██╔══██╗██║     ██╔════╝",
+    r"███████║██║   ██║██║   ╚████╔╝     ██████╔╝██║██████╔╝██║     █████╗  ",
+    r"██╔══██║██║   ██║██║    ╚██╔╝      ██╔══██╗██║██╔══██╗██║     ██╔══╝  ",
+    r"██║  ██║╚██████╔╝███████╗██║       ██████╔╝██║██████╔╝███████╗███████╗",
+    r"╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝       ╚═════╝ ╚═╝╚═════╝ ╚══════╝╚══════╝"
+]
+
+def rgb_to_xterm256(r, g, b):
+    return 16 + (36 * int(r * 5 / 255)) + (6 * int(g * 5 / 255)) + int(b * 5 / 255)
+
+def parse_hex_color(hex_str):
+    if not hex_str:
+        return None
+    h = hex_str.strip().lstrip("#").rstrip(";")
+    if len(h) >= 6:
+        try:
+            return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        except ValueError:
+            pass
+    return None
+
+def load_live_omarchy_theme():
+    # Direct live state config from Omarchy
+    theme_file = os.path.expanduser("~/.local/state/omarchy/current/theme/foot.ini")
+    
+    primary = (180, 100, 220)   # Default fallback
+    secondary = (70, 180, 210)
+    accent = (235, 195, 80)
+    
+    if os.path.exists(theme_file):
+        try:
+            with open(theme_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                # Parse color slots written by Omarchy
+                c4 = re.search(r'regular4\s*=\s*([0-9a-fA-F]{6})', content)
+                c5 = re.search(r'regular5\s*=\s*([0-9a-fA-F]{6})', content)
+                c6 = re.search(r'regular6\s*=\s*([0-9a-fA-F]{6})', content)
+                c3 = re.search(r'regular3\s*=\s*([0-9a-fA-F]{6})', content)
+                
+                if c4 or c5:
+                    primary = parse_hex_color(c4.group(1) if c4 else c5.group(1)) or primary
+                if c6:
+                    secondary = parse_hex_color(c6.group(1)) or secondary
+                if c3:
+                    accent = parse_hex_color(c3.group(1)) or accent
+        except Exception:
+            pass
+            
+    return {
+        "p": rgb_to_xterm256(*primary),
+        "s": rgb_to_xterm256(*secondary),
+        "a": rgb_to_xterm256(*accent)
+    }
+
+def tui_main(stdscr):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    stdscr.keypad(True)
+    curses.cbreak()
+    curses.noecho()
+    
+    pal = load_live_omarchy_theme()
+    
+    try:
+        curses.init_pair(1, pal["p"], -1)                 # Main Omarchy Accent (Title/Borders)
+        curses.init_pair(2, pal["s"], -1)                 # Secondary Accent (Verse numbers/keys)
+        curses.init_pair(3, -1, -1)                       # Native Terminal Text
+        curses.init_pair(4, pal["a"], -1)                 # Highlight Yellow/Gold
+        curses.init_pair(5, curses.COLOR_BLACK, pal["s"]) # Footer pill
+        curses.init_pair(6, curses.COLOR_BLACK, pal["p"]) # Header badge
+        curses.init_pair(7, pal["s"], -1)                 # Chapter summary brief
+    except Exception:
+        curses.init_pair(1, curses.COLOR_MAGENTA, -1)
+        curses.init_pair(2, curses.COLOR_CYAN, -1)
+        curses.init_pair(3, -1, -1)
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)
+        curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_MAGENTA)
+        curses.init_pair(7, curses.COLOR_CYAN, -1)
+
+    state = "HOME"
+    current_book = "John"
+    current_chap = 3
+    highlight_v = 16
+    needs_reposition = True
+    scroll_offset = 0
+
+    daily_ref, daily_text = get_daily_verse()
+
+    while True:
+        stdscr.erase()
+        h, w = stdscr.getmaxyx()
+        content_width = min(w - 4, 84)
+        start_x = max(2, (w - content_width) // 2)
+
+        if state == "HOME":
+            logo_start_y = 1
+            if h >= 26:
+                for idx, line in enumerate(HOLY_BIBLE_BANNER):
+                    lx = max(0, (w - len(line)) // 2)
+                    stdscr.addstr(logo_start_y + idx, lx, line, curses.color_pair(1) | curses.A_BOLD)
+                sub_y = logo_start_y + len(HOLY_BIBLE_BANNER)
+            else:
+                title_badge = " ❖ HOLY BIBLE · NEW INTERNATIONAL VERSION ❖ "
+                stdscr.addstr(1, max(0, (w - len(title_badge)) // 2), title_badge, curses.color_pair(6) | curses.A_BOLD)
+                sub_y = 3
+
+            sub_title = "❖  N E W   I N T E R N A T I O N A L   V E R S I O N  ❖"
+            stdscr.addstr(sub_y, max(0, (w - len(sub_title)) // 2), sub_title, curses.color_pair(2) | curses.A_BOLD)
+
+            box_w = min(content_width, w - 4)
+            bx = max(2, (w - box_w) // 2)
+            card_y = sub_y + 2
+
+            stdscr.addstr(card_y, bx, "╭" + "─" * (box_w - 2) + "╮", curses.color_pair(1))
+            stdscr.addstr(card_y + 1, bx, f"│  VERSE OF THE DAY  ·  {daily_ref}".ljust(box_w - 1) + "│", curses.color_pair(4) | curses.A_BOLD)
+            stdscr.addstr(card_y + 2, bx, "├" + "─" * (box_w - 2) + "┤", curses.color_pair(1))
+            
+            wrapped_daily = textwrap.wrap(f"“{daily_text.strip()}”", box_w - 6)
+            row = card_y + 3
+            for line in wrapped_daily[:4]:
+                stdscr.addstr(row, bx, f"│  {line.ljust(box_w - 6)}  │", curses.color_pair(3))
+                row += 1
+            stdscr.addstr(row, bx, "╰" + "─" * (box_w - 2) + "╯", curses.color_pair(1))
+
+            menu_y = row + 2
+            options = [
+                ("1", f"Read Scripture ({current_book} {current_chap})", "Open reading view"),
+                ("2", "Verse of the Day Chapter", f"Jump to {daily_ref.rsplit(':', 1)[0]}"),
+                ("3", "Fuzzy Search (/)", "Search scriptures and topics"),
+                ("4", "Random Passage (r)", "Surprise inspiration"),
+                ("q", "Quit", "Exit back to terminal")
+            ]
+
+            for key, title, desc in options:
+                if menu_y < h - 3:
+                    stdscr.addstr(menu_y, bx + 2, f"[{key}]", curses.color_pair(2) | curses.A_BOLD)
+                    stdscr.addstr(menu_y, bx + 7, title.ljust(30), curses.color_pair(3) | curses.A_BOLD)
+                    stdscr.addstr(menu_y, bx + 38, desc, curses.A_DIM)
+                    menu_y += 1 if h < 30 else 2
+
+            footer = " [1-4] Navigate  ·  [/] Search  ·  [q] Quit "
+            stdscr.addstr(h - 2, max(0, (w - len(footer)) // 2), footer, curses.color_pair(5))
+            
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key in [ord('q'), ord('Q'), 27]:
+                break
+            elif key in [ord('1'), ord('\n'), curses.KEY_ENTER]:
+                state = "READ"
+                scroll_offset = 0
+                needs_reposition = True
+            elif key == ord('2'):
+                b, c, v = parse_search_selection(daily_ref)
+                if b:
+                    current_book, current_chap, highlight_v = b, c, v
+                    state = "READ"
+                    scroll_offset = 0
+                    needs_reposition = True
+            elif key in [ord('3'), ord('/'), ord('s')]:
+                b, c, v = run_fzf_search(stdscr)
+                if b:
+                    current_book, current_chap, highlight_v = b, c, v
+                    state = "READ"
+                    scroll_offset = 0
+                    needs_reposition = True
+            elif key in [ord('4'), ord('r')]:
+                rand_ref = random.choice(list(bible.keys()))
+                b, c, v = parse_search_selection(rand_ref)
+                if b:
+                    current_book, current_chap, highlight_v = b, c, v
+                    state = "READ"
+                    scroll_offset = 0
+                    needs_reposition = True
+
+        elif state == "READ":
+            max_c = get_max_chapters(current_book)
+            book_brief = BOOK_BRIEFS.get(current_book, "Holy Scripture of the Old and New Testaments.")
+
+            lines, v_indices = renderer.get_lines(current_book, current_chap, content_width)
+
+            render_y = 4
+            max_render_y = h - 4
+            view_height = max(1, max_render_y - render_y)
+            max_scroll = max(0, len(lines) - view_height)
+
+            if needs_reposition:
+                if highlight_v is not None and highlight_v in v_indices:
+                    target_line = v_indices[highlight_v]
+                    scroll_offset = max(0, min(target_line - 2, max_scroll))
+                else:
+                    scroll_offset = 0
+                needs_reposition = False
+
+            scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+            head_badge = f" {current_book.upper()}  ·  CHAPTER {current_chap} / {max_c} "
+            stdscr.addstr(1, max(0, (w - len(head_badge)) // 2), head_badge, curses.color_pair(6) | curses.A_BOLD)
+            
+            brief_text = f"― {book_brief} ―"
+            stdscr.addstr(2, max(0, (w - len(brief_text)) // 2), brief_text, curses.color_pair(7) | curses.A_DIM)
+            stdscr.addstr(3, start_x, "─" * content_width, curses.color_pair(1))
+
+            gutter_w = 6
+            for i in range(scroll_offset, min(len(lines), scroll_offset + view_height)):
+                v_label, v_num, text_line = lines[i]
+                y_pos = render_y + (i - scroll_offset)
+
+                is_hl = (highlight_v is not None and v_num == highlight_v)
+
+                if v_label:
+                    gutter_str = f"{v_label:>5} "
+                    color = curses.color_pair(4) if is_hl else curses.color_pair(2)
+                    stdscr.addstr(y_pos, start_x, gutter_str, color | curses.A_BOLD)
+                
+                line_color = curses.color_pair(4) if is_hl else curses.color_pair(3)
+                stdscr.addstr(y_pos, start_x + gutter_w, text_line, line_color)
+
+            stdscr.addstr(h - 3, start_x, "─" * content_width, curses.color_pair(1))
+            status = " [1/n]Next  [2/p]Prev  [3//]Search  [h]Home  [j/k]Scroll  [q]Quit "
+            stdscr.addstr(h - 2, max(0, (w - len(status)) // 2), status, curses.color_pair(5))
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            b_idx = BOOKS.index(current_book) if current_book in BOOKS else 0
+
+            if key in [ord('q'), ord('Q'), 27]:
+                state = "HOME"
+            elif key in [curses.KEY_DOWN, ord('j'), ord('J')]:
+                scroll_offset = min(max_scroll, scroll_offset + 3)
+            elif key in [curses.KEY_UP, ord('k'), ord('K')]:
+                scroll_offset = max(0, scroll_offset - 3)
+            elif key in [ord(' '), curses.KEY_NPAGE, 4]:
+                scroll_offset = min(max_scroll, scroll_offset + max(1, view_height - 3))
+            elif key in [curses.KEY_PPAGE, 21]:
+                scroll_offset = max(0, scroll_offset - max(1, view_height - 3))
+            elif key in [ord('g'), curses.KEY_HOME]:
+                scroll_offset = 0
+            elif key in [ord('G'), curses.KEY_END]:
+                scroll_offset = max_scroll
+            elif key in [ord('1'), ord('n'), ord('N'), curses.KEY_RIGHT]:
+                highlight_v = None
+                needs_reposition = True
+                if current_chap < max_c:
+                    current_chap += 1
+                elif b_idx < len(BOOKS) - 1:
+                    current_book = BOOKS[b_idx + 1]
+                    current_chap = 1
+                scroll_offset = 0
+            elif key in [ord('2'), ord('p'), ord('P'), curses.KEY_LEFT]:
+                highlight_v = None
+                needs_reposition = True
+                if current_chap > 1:
+                    current_chap -= 1
+                elif b_idx > 0:
+                    current_book = BOOKS[b_idx - 1]
+                    current_chap = get_max_chapters(current_book)
+                scroll_offset = 0
+            elif key in [ord('3'), ord('/'), ord('s')]:
+                b, c, v = run_fzf_search(stdscr)
+                if b:
+                    current_book, current_chap, highlight_v = b, c, v
+                    state = "READ"
+                    scroll_offset = 0
+                    needs_reposition = True
+            elif key == ord('h'):
+                state = "HOME"
+
+def main():
+    if len(sys.argv) > 1:
+        raw = " ".join(sys.argv[1:]).strip().lower()
+        matches = [(ref, text) for ref, text in bible.items() if ref.lower().startswith(raw)]
+        if not matches:
+            tokens = [t for t in re.split(r'\s+', raw) if t]
+            matches = [
+                (ref, text) for ref, text in bible.items() 
+                if all(t in (ref.lower() + " " + text.lower()) for t in tokens)
+            ]
+        if matches:
+            w = min(80, 78)
+            for r, t in matches[:20]:
+                print(f"\033[1;36m{r}\033[0m")
+                print(f"\033[0;37m{textwrap.fill(t.strip(), w)}\033[0m\n")
+        else:
+            print(f"No verses found for: {raw}")
+        sys.exit(0)
+
+    curses.wrapper(tui_main)
+
+if __name__ == "__main__":
+    main()
